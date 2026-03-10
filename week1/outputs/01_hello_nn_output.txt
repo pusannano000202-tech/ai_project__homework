@@ -1,0 +1,32 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1773119294.741292   32708 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1773119295.859597   32708 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+C:\Users\user6\Desktop\ai������������\.venv\Lib\site-packages\keras\src\layers\core\dense.py:106: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+  super().__init__(activity_regularizer=activity_regularizer, **kwargs)
+I0000 00:00:1773119296.322162   32708 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING:tensorflow:TensorFlow GPU support is not available on native Windows for TensorFlow >= 2.11. Even if CUDA/cuDNN are installed, GPU will not be used. Please use WSL2 or the TensorFlow-DirectML plugin.
+TensorFlow Version: 2.21.0
+
+Training Data:
+X: [-1.  0.  1.  2.  3.  4.]
+y (clean): [-3. -1.  1.  3.  5.  7.]
+y (noisy): [-2.50328585 -1.1382643   1.64768854  4.52302986  4.76584663  6.76586304]
+
+Starting training...
+Training finished!
+
+[1m1/1[0m [32m����������������������������������������[0m[37m[0m [1m0s[0m 16ms/step
+[1m1/1[0m [32m����������������������������������������[0m[37m[0m [1m0s[0m 25ms/step
+
+Prediction for x=10.0: 18.5900
+Expected value: 19.0
+
+Loss plot saved to outputs\training_loss.png
+Model fit plot saved to outputs\model_fit.png
+
+Learned Parameters:
+Weight (w): 1.9111 (Expected: 2.0)
+Bias (b): -0.5212 (Expected: -1.0)
+Formula: y = 1.9111x + -0.5212
