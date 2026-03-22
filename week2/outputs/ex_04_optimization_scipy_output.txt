@@ -1,0 +1,11 @@
+=== SciPy�� �̿��� ����ȭ (Optimization with SciPy) ===
+���� ��ġ: x = -3.0
+
+[����ȭ ���]
+���� ����: True
+�޽���: Optimization terminated successfully.
+������ x: 2.0000
+�ּҰ� y: 1.0000
+�ݺ� Ƚ��: 3
+
+�׷����� ����Ǿ����ϴ�: C:\Users\user6\Desktop\ai������������\week2\outputs\ex_04_optimization_scipy.png
