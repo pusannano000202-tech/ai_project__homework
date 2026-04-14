@@ -35,8 +35,10 @@ BASE_URL = BASE_URL_ENV or "http://localhost:8000"
 GOOGLE_CLIENT_ID = read_env("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = read_env("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = read_env("GOOGLE_REDIRECT_URI")
+POLAR_CHECKOUT_URL = read_env("POLAR_CHECKOUT_URL")
 SESSION_SECRET_KEY = read_env("SESSION_SECRET_KEY")
 GOOGLE_CALLBACK_PATH = "/api/auth/google/callback"
+FREE_CONTACT_ANALYSIS_LIMIT = 5
 
 SESSION_KEY_FALLBACK_USED = SESSION_SECRET_KEY is None
 SESSION_SECRET = SESSION_SECRET_KEY or secrets.token_urlsafe(32)
@@ -157,6 +159,17 @@ def build_auth_config_issues() -> list[str]:
     return issues
 
 
+def build_billing_config_issues() -> list[str]:
+    issues: list[str] = []
+
+    if not POLAR_CHECKOUT_URL:
+        issues.append("POLAR_CHECKOUT_URL이 설정되지 않았습니다.")
+    elif "sandbox-api.polar.sh" not in POLAR_CHECKOUT_URL and "polar.sh" not in POLAR_CHECKOUT_URL:
+        issues.append("POLAR_CHECKOUT_URL 형식을 다시 확인해 주세요.")
+
+    return issues
+
+
 def set_auth_message(request: Request, text: str, level: str = "info") -> None:
     request.session["auth_message"] = {"text": text, "level": level}
 
@@ -174,6 +187,59 @@ def auth_is_configured() -> bool:
         and GOOGLE_REDIRECT_URI is not None
         and not SESSION_KEY_FALLBACK_USED
     )
+
+
+def billing_is_configured() -> bool:
+    return POLAR_CHECKOUT_URL is not None
+
+
+def get_billing_state(request: Request) -> dict[str, object]:
+    state = request.session.get("billing")
+    if isinstance(state, dict):
+        return state
+    return {}
+
+
+def is_premium_active(request: Request) -> bool:
+    return bool(get_billing_state(request).get("premium_active"))
+
+
+def get_checkout_id(request: Request) -> str | None:
+    checkout_id = get_billing_state(request).get("checkout_id")
+    if isinstance(checkout_id, str) and checkout_id:
+        return checkout_id
+    return None
+
+
+def get_contact_analysis_usage(request: Request) -> int:
+    value = request.session.get("contact_analysis_uses", 0)
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0
+
+
+def get_remaining_free_analyses(request: Request) -> int:
+    remaining = FREE_CONTACT_ANALYSIS_LIMIT - get_contact_analysis_usage(request)
+    return max(0, remaining)
+
+
+def can_use_contact_angle_lab(request: Request) -> bool:
+    return is_premium_active(request) or get_remaining_free_analyses(request) > 0
+
+
+def mark_premium_active(request: Request, checkout_id: str | None = None) -> None:
+    request.session["billing"] = {
+        "premium_active": True,
+        "checkout_id": checkout_id or "",
+    }
+
+
+def clear_premium_state(request: Request) -> None:
+    request.session.pop("billing", None)
+
+
+def increment_free_analysis_usage(request: Request) -> None:
+    request.session["contact_analysis_uses"] = get_contact_analysis_usage(request) + 1
 
 
 def render_home(
@@ -196,6 +262,14 @@ def render_home(
             "auth_message": request.session.pop("auth_message", None),
             "auth_config_issues": build_auth_config_issues(),
             "auth_ready": auth_is_configured(),
+            "billing_config_issues": build_billing_config_issues(),
+            "billing_ready": billing_is_configured(),
+            "premium_active": is_premium_active(request),
+            "premium_checkout_id": get_checkout_id(request),
+            "free_analysis_limit": FREE_CONTACT_ANALYSIS_LIMIT,
+            "free_analysis_used": get_contact_analysis_usage(request),
+            "free_analysis_remaining": get_remaining_free_analyses(request),
+            "contact_lab_locked": not can_use_contact_angle_lab(request),
             "contact_result": contact_result,
             "contact_error": contact_error,
         },
@@ -204,11 +278,39 @@ def render_home(
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
+    polar_status = request.query_params.get("polar")
+    checkout_id = request.query_params.get("checkout_id")
+
+    if polar_status == "success":
+        mark_premium_active(request, checkout_id)
+        set_auth_message(
+            request,
+            "Polar 결제가 완료되어 프리미엄 기능이 활성화되었습니다.",
+            "success",
+        )
+        return RedirectResponse(url=str(request.url_for("home")), status_code=303)
+
+    if polar_status == "cancel":
+        set_auth_message(
+            request,
+            "결제가 취소되었습니다. 무료 사용 횟수 안에서 계속 체험할 수 있습니다.",
+            "info",
+        )
+        return RedirectResponse(url=str(request.url_for("home")), status_code=303)
+
     return render_home(request)
 
 
 @app.post("/analysis/contact-angle", response_class=HTMLResponse, name="contact_angle_analysis")
 async def contact_angle_analysis(request: Request, image: UploadFile = File(...)) -> HTMLResponse:
+    if not can_use_contact_angle_lab(request):
+        set_auth_message(
+            request,
+            "무료 분석 횟수를 모두 사용했습니다. 계속 사용하려면 프리미엄으로 업그레이드해 주세요.",
+            "error",
+        )
+        return RedirectResponse(url=f"{request.url_for('home')}#contact-angle-lab", status_code=303)
+
     if not image.filename:
         return render_home(request, contact_error="업로드할 이미지를 선택해 주세요.")
 
@@ -229,7 +331,51 @@ async def contact_angle_analysis(request: Request, image: UploadFile = File(...)
             contact_error="이미지 분석 중 오류가 발생했습니다. 측면 사진인지와 배경 대비를 다시 확인해 주세요.",
         )
 
+    if not is_premium_active(request):
+        increment_free_analysis_usage(request)
+
     return render_home(request, contact_result=result)
+
+
+@app.get("/billing/upgrade", name="billing_upgrade")
+async def billing_upgrade(request: Request) -> RedirectResponse:
+    if get_current_user(request) is None:
+        set_auth_message(
+            request,
+            "프리미엄 업그레이드 전 Google 로그인을 먼저 해 주세요.",
+            "error",
+        )
+        return RedirectResponse(url=str(request.url_for("home")), status_code=303)
+
+    if is_premium_active(request):
+        set_auth_message(
+            request,
+            "이미 프리미엄 기능이 활성화되어 있습니다.",
+            "info",
+        )
+        return RedirectResponse(url=f"{request.url_for('home')}#contact-angle-lab", status_code=303)
+
+    if not billing_is_configured() or POLAR_CHECKOUT_URL is None:
+        set_auth_message(
+            request,
+            "Polar 결제 링크가 아직 설정되지 않았습니다. .env의 POLAR_CHECKOUT_URL을 확인해 주세요.",
+            "error",
+        )
+        return RedirectResponse(url=str(request.url_for("home")), status_code=303)
+
+    return RedirectResponse(url=POLAR_CHECKOUT_URL, status_code=303)
+
+
+@app.get("/billing/reset", name="billing_reset")
+async def billing_reset(request: Request) -> RedirectResponse:
+    clear_premium_state(request)
+    request.session["contact_analysis_uses"] = 0
+    set_auth_message(
+        request,
+        "프리미엄 상태와 무료 사용 횟수를 초기화했습니다.",
+        "info",
+    )
+    return RedirectResponse(url=f"{request.url_for('home')}#contact-angle-lab", status_code=303)
 
 
 @app.get("/auth/google/login", name="google_login")
@@ -298,6 +444,8 @@ async def health() -> dict[str, object]:
     return {
         "status": "ok",
         "google_oauth_configured": google_oauth is not None,
+        "polar_billing_configured": billing_is_configured(),
+        "free_contact_analysis_limit": FREE_CONTACT_ANALYSIS_LIMIT,
         "session_secret_from_env": SESSION_SECRET_KEY is not None,
     }
 
