@@ -126,8 +126,8 @@ GOOGLE_REDIRECT_URI=https://your-project.vercel.app/api/auth/google/callback
 
 ### Vercel 설정 파일
 
-- `vercel.json`
-  Python 함수 실행 시간을 기본값보다 여유 있게 잡기 위한 설정입니다.
+- `index.py`
+  Vercel이 FastAPI 앱 진입점을 더 안정적으로 인식하도록 `main.app`을 가져오는 얇은 엔트리 파일입니다.
 - `.vercelignore`
   `.env`, 로컬 실행용 파일, 캐시 파일처럼 배포에 불필요한 파일을 제외하기 위한 설정입니다.
 
