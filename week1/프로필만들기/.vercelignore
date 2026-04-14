@@ -2,6 +2,6 @@ __pycache__/
 *.pyc
 .env
 .env.*
-README.md
-run_portfolio.bat
-index.html
+/README.md
+/run_portfolio.bat
+/index.html
